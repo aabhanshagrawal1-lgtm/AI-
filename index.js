@@ -1,289 +1,367 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom/client';
+import CodingAI from './coding-ai';
 
-const SYSTEM_PROMPT = `You are an elite coding assistant — precise, fast, and deeply knowledgeable across all programming languages and frameworks. You specialize in:
-- Writing clean, production-ready code
-- Debugging and fixing errors
-- Explaining complex concepts clearly
-- Code reviews and optimizations
-- Architecture and design patterns
+// ─── Inject global styles ──────────────────────────────────────────────────
+const GlobalStyles = () => {
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
-Format all code in proper markdown code blocks with language tags. Be direct and technical. When asked to write code, write the full implementation — no placeholders, no "TODO" comments unless explicitly asked. If something is ambiguous, make a reasonable assumption and state it briefly.`;
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-const CodeBlock = ({ code, lang }) => {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <div style={{ position: "relative", margin: "12px 0" }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        background: "#0d0d0d", borderRadius: "8px 8px 0 0",
-        padding: "6px 14px", borderBottom: "1px solid #2a2a2a"
-      }}>
-        <span style={{ color: "#666", fontSize: "11px", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "1px" }}>{lang || "code"}</span>
-        <button onClick={copy} style={{
-          background: "none", border: "1px solid #333", borderRadius: "4px",
-          color: copied ? "#4ade80" : "#888", fontSize: "11px", cursor: "pointer",
-          padding: "2px 10px", fontFamily: "monospace", transition: "all 0.2s"
-        }}>{copied ? "✓ copied" : "copy"}</button>
-      </div>
-      <pre style={{
-        background: "#0a0a0a", margin: 0, padding: "16px", borderRadius: "0 0 8px 8px",
-        overflowX: "auto", fontSize: "13px", lineHeight: "1.7",
-        fontFamily: "'JetBrains Mono', 'Fira Code', monospace", color: "#e2e8f0",
-        border: "1px solid #1a1a1a", borderTop: "none"
-      }}>
-        <code>{code}</code>
-      </pre>
-    </div>
-  );
+      :root {
+        --bg:        #04040a;
+        --surface:   #0b0b14;
+        --border:    #1c1c2e;
+        --accent:    #7c6aff;
+        --accent2:   #38bdf8;
+        --accent3:   #f472b6;
+        --text:      #e2e8f0;
+        --muted:     #475569;
+        --glow:      rgba(124,106,255,0.35);
+      }
+
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Syne', sans-serif;
+        overflow: hidden;
+      }
+
+      /* custom scrollbar */
+      ::-webkit-scrollbar { width: 5px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 4px; }
+
+      /* ── Splash animations ── */
+      @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(24px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      @keyframes scaleIn {
+        from { opacity: 0; transform: scale(0.6); }
+        to   { opacity: 1; transform: scale(1); }
+      }
+      @keyframes spinSlow {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      @keyframes spinSlowRev {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(-360deg); }
+      }
+      @keyframes pulse {
+        0%,100% { opacity: .4; transform: scale(.85); }
+        50%      { opacity: 1;  transform: scale(1.15); }
+      }
+      @keyframes shimmer {
+        0%   { background-position: -200% center; }
+        100% { background-position:  200% center; }
+      }
+      @keyframes orbit {
+        from { transform: rotate(0deg) translateX(54px) rotate(0deg); }
+        to   { transform: rotate(360deg) translateX(54px) rotate(-360deg); }
+      }
+      @keyframes orbit2 {
+        from { transform: rotate(120deg) translateX(54px) rotate(-120deg); }
+        to   { transform: rotate(480deg) translateX(54px) rotate(-480deg); }
+      }
+      @keyframes orbit3 {
+        from { transform: rotate(240deg) translateX(54px) rotate(-240deg); }
+        to   { transform: rotate(600deg) translateX(54px) rotate(-600deg); }
+      }
+      @keyframes gridPan {
+        from { transform: translateY(0); }
+        to   { transform: translateY(48px); }
+      }
+      @keyframes blink {
+        0%,100% { opacity: 1; }
+        50%      { opacity: 0; }
+      }
+      @keyframes slideOut {
+        to { opacity: 0; transform: scale(1.06); }
+      }
+      @keyframes appIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      .splash-exit  { animation: slideOut 0.55s cubic-bezier(.4,0,.2,1) forwards; }
+      .app-enter    { animation: appIn   0.6s  cubic-bezier(.4,0,.2,1) forwards; }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
+  return null;
 };
 
-const parseMessage = (text) => {
-  const parts = [];
-  const regex = /```(\w*)\n?([\s\S]*?)```/g;
-  let last = 0, match;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > last) parts.push({ type: "text", content: text.slice(last, match.index) });
-    parts.push({ type: "code", lang: match[1], content: match[2].trim() });
-    last = match.index + match[0].length;
-  }
-  if (last < text.length) parts.push({ type: "text", content: text.slice(last) });
-  return parts;
-};
+// ─── Animated grid background ─────────────────────────────────────────────
+const GridBG = () => (
+  <div style={{
+    position: 'absolute', inset: 0, overflow: 'hidden',
+    backgroundImage: `
+      linear-gradient(rgba(124,106,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,106,255,.04) 1px, transparent 1px)
+    `,
+    backgroundSize: '48px 48px',
+    animation: 'gridPan 4s linear infinite',
+    maskImage: 'radial-gradient(ellipse 80% 80% at 50% 40%, black 40%, transparent 100%)',
+  }} />
+);
 
-const MessageBubble = ({ msg }) => {
-  const isUser = msg.role === "user";
-  const parts = isUser ? null : parseMessage(msg.content);
-  return (
+// ─── Floating orbs ────────────────────────────────────────────────────────
+const Orbs = () => (
+  <>
+    {[
+      { size: 340, x: '15%',  y: '20%', color: 'rgba(124,106,255,0.13)', blur: 90,  delay: '0s'   },
+      { size: 260, x: '70%',  y: '60%', color: 'rgba(56,189,248,0.10)',  blur: 70,  delay: '1.5s' },
+      { size: 200, x: '50%',  y: '10%', color: 'rgba(244,114,182,0.08)', blur: 60,  delay: '3s'   },
+    ].map((o, i) => (
+      <div key={i} style={{
+        position: 'absolute',
+        width: o.size, height: o.size,
+        left: o.x, top: o.y,
+        transform: 'translate(-50%,-50%)',
+        borderRadius: '50%',
+        background: o.color,
+        filter: `blur(${o.blur}px)`,
+        animation: `pulse 6s ease-in-out ${o.delay} infinite`,
+        pointerEvents: 'none',
+      }} />
+    ))}
+  </>
+);
+
+// ─── Central logo mark ────────────────────────────────────────────────────
+const LogoMark = () => (
+  <div style={{ position: 'relative', width: 120, height: 120, margin: '0 auto 32px' }}>
+    {/* outer ring */}
     <div style={{
-      display: "flex", justifyContent: isUser ? "flex-end" : "flex-start",
-      marginBottom: "20px", gap: "10px", alignItems: "flex-start"
+      position: 'absolute', inset: 0,
+      border: '1px solid rgba(124,106,255,.25)',
+      borderRadius: '50%',
+      animation: 'spinSlow 12s linear infinite',
     }}>
-      {!isUser && (
-        <div style={{
-          width: 32, height: 32, borderRadius: "8px", flexShrink: 0,
-          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "14px", fontWeight: "700", color: "white", marginTop: "2px"
-        }}>∆</div>
-      )}
-      <div style={{ maxWidth: "80%" }}>
-        {isUser ? (
-          <div style={{
-            background: "#1e1e2e", border: "1px solid #2d2d3d",
-            borderRadius: "12px 12px 2px 12px", padding: "12px 16px",
-            color: "#e2e8f0", fontSize: "14px", lineHeight: "1.6", whiteSpace: "pre-wrap"
-          }}>{msg.content}</div>
-        ) : (
-          <div style={{ color: "#cbd5e1", fontSize: "14px", lineHeight: "1.7" }}>
-            {parts.map((p, i) =>
-              p.type === "code"
-                ? <CodeBlock key={i} code={p.content} lang={p.lang} />
-                : <span key={i} style={{ whiteSpace: "pre-wrap" }}>{p.content}</span>
-            )}
-          </div>
-        )}
-      </div>
+      <div style={{
+        position: 'absolute', top: -4, left: '50%', transform: 'translateX(-50%)',
+        width: 8, height: 8, borderRadius: '50%',
+        background: 'var(--accent)', boxShadow: '0 0 10px var(--accent)',
+      }} />
     </div>
-  );
-};
 
-const SUGGESTIONS = [
-  "Write a REST API in Express.js",
-  "Explain async/await vs Promises",
-  "Debug this Python error: IndexError",
-  "Build a React useLocalStorage hook",
-];
+    {/* inner ring */}
+    <div style={{
+      position: 'absolute', inset: 14,
+      border: '1px solid rgba(56,189,248,.2)',
+      borderRadius: '50%',
+      animation: 'spinSlowRev 8s linear infinite',
+    }}>
+      <div style={{
+        position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)',
+        width: 6, height: 6, borderRadius: '50%',
+        background: 'var(--accent2)', boxShadow: '0 0 8px var(--accent2)',
+      }} />
+    </div>
 
-export default function CodingAI() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
-  const textareaRef = useRef(null);
+    {/* orbiting dots */}
+    {['orbit','orbit2','orbit3'].map((a, i) => (
+      <div key={i} style={{
+        position: 'absolute', top: '50%', left: '50%',
+        width: 7, height: 7, marginTop: -3.5, marginLeft: -3.5,
+        borderRadius: '50%',
+        background: ['var(--accent)','var(--accent2)','var(--accent3)'][i],
+        boxShadow: `0 0 8px ${['var(--accent)','var(--accent2)','var(--accent3)'][i]}`,
+        animation: `${a} ${[3.8,4.4,3.2][i]}s linear infinite`,
+      }} />
+    ))}
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
+    {/* core */}
+    <div style={{
+      position: 'absolute', inset: 28,
+      background: 'linear-gradient(135deg, #7c6aff, #38bdf8)',
+      borderRadius: '50%',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 26, fontWeight: 800, color: '#fff',
+      boxShadow: '0 0 32px rgba(124,106,255,.6), 0 0 60px rgba(124,106,255,.25)',
+    }}>∆</div>
+  </div>
+);
 
-  const send = async (text) => {
-    const userText = (text || input).trim();
-    if (!userText || loading) return;
-    setInput("");
-    const newMessages = [...messages, { role: "user", content: userText }];
-    setMessages(newMessages);
-    setLoading(true);
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-opus-4-6",
-          max_tokens: 1000,
-          system: SYSTEM_PROMPT,
-          messages: newMessages.map(m => ({ role: m.role, content: m.content }))
-        })
-      });
-      const data = await res.json();
-      const reply = data.content?.find(b => b.type === "text")?.text || "No response.";
-      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
-    } catch (e) {
-      setMessages(prev => [...prev, { role: "assistant", content: "Error: " + e.message }]);
+// ─── Typewriter ───────────────────────────────────────────────────────────
+const WORDS = ['Code.', 'Debug.', 'Build.', 'Ship.', 'Learn.'];
+const Typewriter = () => {
+  const [wordIdx, setWordIdx] = useState(0);
+  const [displayed, setDisplayed] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (paused) { const t = setTimeout(() => setPaused(false), 1200); return () => clearTimeout(t); }
+    const word = WORDS[wordIdx];
+    if (!deleting) {
+      if (displayed.length < word.length) {
+        const t = setTimeout(() => setDisplayed(word.slice(0, displayed.length + 1)), 80);
+        return () => clearTimeout(t);
+      } else { setPaused(true); setDeleting(true); }
+    } else {
+      if (displayed.length > 0) {
+        const t = setTimeout(() => setDisplayed(displayed.slice(0, -1)), 45);
+        return () => clearTimeout(t);
+      } else { setDeleting(false); setWordIdx((wordIdx + 1) % WORDS.length); }
     }
-    setLoading(false);
-  };
-
-  const handleKey = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  };
-
-  const autoResize = (e) => {
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
-  };
+  }, [displayed, deleting, paused, wordIdx]);
 
   return (
-    <div style={{
-      minHeight: "100vh", background: "#080810",
-      fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column"
+    <span style={{
+      background: 'linear-gradient(90deg, var(--accent), var(--accent2))',
+      WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
     }}>
-      {/* Header */}
+      {displayed}
+      <span style={{ animation: 'blink .7s step-end infinite', WebkitTextFillColor: 'var(--accent)' }}>|</span>
+    </span>
+  );
+};
+
+// ─── Progress bar ─────────────────────────────────────────────────────────
+const ProgressBar = ({ progress }) => (
+  <div style={{ width: 220, margin: '0 auto' }}>
+    <div style={{
+      height: 2, background: 'var(--border)', borderRadius: 2, overflow: 'hidden',
+    }}>
       <div style={{
-        borderBottom: "1px solid #1a1a2e", padding: "16px 24px",
-        display: "flex", alignItems: "center", gap: "12px",
-        background: "rgba(10,10,20,0.9)", backdropFilter: "blur(10px)",
-        position: "sticky", top: 0, zIndex: 10
+        height: '100%', width: `${progress}%`,
+        background: 'linear-gradient(90deg, var(--accent), var(--accent2))',
+        borderRadius: 2,
+        transition: 'width 0.3s ease',
+        boxShadow: '0 0 8px var(--accent)',
+      }} />
+    </div>
+    <div style={{
+      textAlign: 'center', marginTop: 10,
+      fontSize: 11, letterSpacing: '2px', color: 'var(--muted)',
+      fontFamily: "'JetBrains Mono', monospace",
+    }}>
+      {progress < 100 ? 'INITIALIZING...' : 'READY'}
+    </div>
+  </div>
+);
+
+// ─── Shimmer tag pills ─────────────────────────────────────────────────────
+const Tags = () => (
+  <div style={{
+    display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap',
+    marginTop: 28,
+    animation: 'fadeUp .6s ease 1.2s both',
+  }}>
+    {['JavaScript','Python','TypeScript','Rust','Go','React'].map((t, i) => (
+      <span key={t} style={{
+        padding: '4px 12px',
+        border: '1px solid var(--border)',
+        borderRadius: 20,
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', monospace",
+        color: 'var(--muted)',
+        background: 'var(--surface)',
+        animation: `fadeIn .4s ease ${0.9 + i * 0.08}s both`,
+        transition: 'color .2s, border-color .2s',
+        cursor: 'default',
+      }}
+        onMouseOver={e => { e.currentTarget.style.color='var(--accent)'; e.currentTarget.style.borderColor='var(--accent)'; }}
+        onMouseOut={e => { e.currentTarget.style.color='var(--muted)'; e.currentTarget.style.borderColor='var(--border)'; }}
+      >{t}</span>
+    ))}
+  </div>
+);
+
+// ─── Splash Screen ─────────────────────────────────────────────────────────
+const Splash = ({ onDone }) => {
+  const [progress, setProgress] = useState(0);
+  const [exiting, setExiting] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const steps = [
+      [300,  18], [600,  35], [900,  52],
+      [1200, 68], [1500, 82], [1800, 94], [2100, 100],
+    ];
+    const timers = steps.map(([delay, val]) =>
+      setTimeout(() => setProgress(val), delay)
+    );
+    const done = setTimeout(() => {
+      setExiting(true);
+      setTimeout(onDone, 560);
+    }, 2600);
+    return () => { timers.forEach(clearTimeout); clearTimeout(done); };
+  }, [onDone]);
+
+  return (
+    <div ref={ref} className={exiting ? 'splash-exit' : ''}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 100,
+        background: 'var(--bg)',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
       }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: "10px",
-          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "16px", fontWeight: "800", color: "white"
-        }}>∆</div>
-        <div>
-          <div style={{ color: "#e2e8f0", fontWeight: "700", fontSize: "15px", letterSpacing: "-0.3px" }}>CodeMind</div>
-          <div style={{ color: "#4ade80", fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block" }}></span>
-            Powered by Claude Opus 4.6
-          </div>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
-          {["JS", "PY", "TS", "Go"].map(l => (
-            <span key={l} style={{
-              background: "#1a1a2e", border: "1px solid #2d2d4e",
-              borderRadius: "6px", padding: "3px 8px",
-              color: "#6366f1", fontSize: "11px", fontFamily: "monospace", fontWeight: "600"
-            }}>{l}</span>
-          ))}
-        </div>
+      <GridBG />
+      <Orbs />
+
+      {/* logo */}
+      <div style={{ animation: 'scaleIn .6s cubic-bezier(.34,1.56,.64,1) .1s both', position: 'relative', zIndex: 1 }}>
+        <LogoMark />
       </div>
 
-      {/* Chat area */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px", maxWidth: 860, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
-        {messages.length === 0 ? (
-          <div style={{ textAlign: "center", paddingTop: "60px" }}>
-            <div style={{ fontSize: "48px", marginBottom: "16px" }}>⌨️</div>
-            <h2 style={{ color: "#e2e8f0", fontSize: "24px", fontWeight: "700", margin: "0 0 8px", letterSpacing: "-0.5px" }}>
-              Your Elite Coding Assistant
-            </h2>
-            <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "40px" }}>
-              Write code, debug errors, learn concepts — ask anything.
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", maxWidth: 500, margin: "0 auto" }}>
-              {SUGGESTIONS.map((s, i) => (
-                <button key={i} onClick={() => send(s)} style={{
-                  background: "#0f0f1a", border: "1px solid #2d2d3d",
-                  borderRadius: "10px", padding: "12px 14px", color: "#94a3b8",
-                  fontSize: "13px", cursor: "pointer", textAlign: "left",
-                  transition: "all 0.2s", lineHeight: "1.4"
-                }}
-                  onMouseOver={e => { e.currentTarget.style.borderColor = "#6366f1"; e.currentTarget.style.color = "#e2e8f0"; }}
-                  onMouseOut={e => { e.currentTarget.style.borderColor = "#2d2d3d"; e.currentTarget.style.color = "#94a3b8"; }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            {messages.map((m, i) => <MessageBubble key={i} msg={m} />)}
-            {loading && (
-              <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "20px" }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: "8px",
-                  background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "14px", fontWeight: "700", color: "white"
-                }}>∆</div>
-                <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{
-                      width: 7, height: 7, borderRadius: "50%", background: "#6366f1",
-                      animation: "pulse 1.2s ease-in-out infinite",
-                      animationDelay: `${i * 0.2}s`
-                    }} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
+      {/* name */}
       <div style={{
-        borderTop: "1px solid #1a1a2e", padding: "16px 24px",
-        background: "rgba(8,8,16,0.95)", backdropFilter: "blur(10px)"
+        animation: 'fadeUp .6s ease .4s both',
+        textAlign: 'center', position: 'relative', zIndex: 1,
       }}>
-        <div style={{ maxWidth: 860, margin: "0 auto", position: "relative" }}>
-          <div style={{
-            display: "flex", gap: "10px", alignItems: "flex-end",
-            background: "#0f0f1a", border: "1px solid #2d2d3d",
-            borderRadius: "14px", padding: "10px 12px",
-            transition: "border-color 0.2s",
-            boxShadow: "0 0 0 0 transparent"
-          }}>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={e => { setInput(e.target.value); autoResize(e); }}
-              onKeyDown={handleKey}
-              placeholder="Ask about code, paste errors, request implementations..."
-              rows={1}
-              style={{
-                flex: 1, background: "none", border: "none", outline: "none",
-                color: "#e2e8f0", fontSize: "14px", lineHeight: "1.6", resize: "none",
-                fontFamily: "inherit", minHeight: "24px", maxHeight: "160px"
-              }}
-            />
-            <button onClick={() => send()} disabled={!input.trim() || loading} style={{
-              width: 36, height: 36, borderRadius: "10px", flexShrink: 0,
-              background: input.trim() && !loading ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#1e1e2e",
-              border: "none", cursor: input.trim() && !loading ? "pointer" : "default",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "16px", transition: "all 0.2s", color: "white"
-            }}>↑</button>
-          </div>
-          <div style={{ textAlign: "center", marginTop: "8px", color: "#334155", fontSize: "11px" }}>
-            Shift+Enter for new line · Enter to send
-          </div>
-        </div>
+        <h1 style={{
+          fontSize: 48, fontWeight: 800, letterSpacing: '-2px',
+          background: 'linear-gradient(135deg, #fff 30%, var(--accent) 100%)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          lineHeight: 1.1, marginBottom: 10,
+        }}>CodeMind</h1>
+        <p style={{
+          fontSize: 15, color: 'var(--muted)',
+          fontFamily: "'JetBrains Mono', monospace",
+          letterSpacing: '1px',
+          marginBottom: 32,
+        }}>
+          AI that can&nbsp; <Typewriter />
+        </p>
+        <ProgressBar progress={progress} />
+        <Tags />
       </div>
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 0.3; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1.1); }
-        }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #2d2d3d; border-radius: 3px; }
-      `}</style>
     </div>
   );
-}
+};
+
+// ─── Root App ──────────────────────────────────────────────────────────────
+const App = () => {
+  const [ready, setReady] = useState(false);
+
+  return (
+    <>
+      <GlobalStyles />
+      {!ready && <Splash onDone={() => setReady(true)} />}
+      {ready && (
+        <div className="app-enter" style={{ height: '100%' }}>
+          <CodingAI />
+        </div>
+      )}
+    </>
+  );
+};
+
+// ─── Mount ─────────────────────────────────────────────────────────────────
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<React.StrictMode><App /></React.StrictMode>);
